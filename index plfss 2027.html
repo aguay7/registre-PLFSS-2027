@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Registre PLFSS 2027</title>
+<style>
+:root{--c-fond:#f7f8fa;--c-encre:#15181d;--c-doux:#4a515c;--c-cadre:#dde2e9;--c-carte:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--c-fond:#0f1216;--c-encre:#e8ecf2;--c-doux:#b4bcc8;--c-cadre:#2a313a;--c-carte:#1b2027}}
+:root[data-theme="dark"]{--c-fond:#0f1216;--c-encre:#e8ecf2;--c-doux:#b4bcc8;--c-cadre:#2a313a;--c-carte:#1b2027}
+body{margin:0;background:var(--c-fond);color:var(--c-encre);font:15px/1.55 system-ui,-apple-system,sans-serif}
+#coquille{max-width:620px;margin:60px auto;padding:0 16px;color:var(--c-doux)}
+#coquille b{color:var(--c-encre)}
+.maj-lecteur{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:14px 0 0;padding:8px 12px;font-size:13px;
+  border:1px solid var(--rule,var(--c-cadre));border-radius:6px;background:var(--card,var(--c-carte));color:var(--ink-2,var(--c-doux))}
+.maj-lecteur button{font:inherit;border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0}
+</style>
+</head><body>
+<div id="coquille">Chargement du registre…</div>
+<script>
+/* Coquille du registre PLFSS 2027 — ce fichier ne change jamais.
+   Il télécharge le lecteur à jour (mise en forme, onglets, code) depuis l'adresse ci-dessous, le lance, et
+   garde sur le poste la dernière version qui a fonctionné, pour s'en servir sans connexion ou si une version
+   nouvelle refusait de démarrer. Les données, chiffrées, sont téléchargées ensuite par le lecteur lui-même. */
+(function(){
+  var LECTEUR = "https://xsgcfgkkhkgphwfutqdt.supabase.co/storage/v1/object/public/registres/lecteur-plfss.json";
+  var K_APP = "registre:plfss-2027:lecteur", K_VU = "registre:plfss-2027:lecteur-vu";
+  try { var p = new URLSearchParams(location.search).get("lecteur"); if (p) LECTEUR = p; } catch(e){}
+
+  function lire(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+  function ecrire(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
+  function valide(a){ return a && a.format === "lecteur-v1" && typeof a.html === "string" && Array.isArray(a.scripts); }
+  function message(h){ document.body.innerHTML = '<div id="coquille">' + h + '</div>'; }
+  function quand(iso){
+    try { return new Date(iso).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "long", year: "numeric" }); }
+    catch(e){ return iso; }
+  }
+
+  function lancer(app){
+    document.body.innerHTML = app.html;
+    for (var i = 0; i < app.scripts.length; i++) (new Function(app.scripts[i]))();
+  }
+
+  function signaler(app, ancienne){
+    var vu = lire(K_VU);
+    var texte = null;
+    if (ancienne) texte = "La dernière version du lecteur n'a pas pu démarrer : affichage de la version précédente (" + quand(ancienne.publie_le) + ").";
+    else if (vu && vu !== app.version) texte = "Lecteur mis à jour le " + quand(app.publie_le) + (app.note ? " : " + app.note : ".");
+    if (!ancienne) ecrire(K_VU, app.version);
+    if (!texte) return;
+    var page = document.querySelector(".page header") || document.body;
+    var p = document.createElement("p"); p.className = "maj-lecteur";
+    p.innerHTML = "<span></span><button type='button'>Fermer</button>";
+    p.firstChild.textContent = texte;
+    p.lastChild.onclick = function(){ p.remove(); };
+    page.appendChild(p);
+  }
+
+  async function demarrer(){
+    var enCache = null, neuve = null;
+    try { enCache = JSON.parse(lire(K_APP)); } catch(e){}
+    if (!valide(enCache)) enCache = null;
+    try {
+      var r = await fetch(LECTEUR + (LECTEUR.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now(), { cache: "no-store" });
+      if (r.ok) neuve = await r.json();
+    } catch(e){}
+    if (!valide(neuve)) neuve = null;
+
+    var app = neuve || enCache;
+    if (!app) {
+      message("<b>Le registre ne peut pas s'ouvrir.</b><br>Le lecteur n'a pas pu être téléchargé (pas de connexion, ou réseau qui bloque <i>supabase.co</i>) " +
+              "et aucune version n'a encore été enregistrée sur ce poste. Réessayez une fois connecté.");
+      return;
+    }
+    try {
+      lancer(app);
+      ecrire(K_APP, JSON.stringify(app));
+      signaler(app, null);
+    } catch (e) {
+      console.error(e);
+      if (enCache && app !== enCache) {
+        try { lancer(enCache); signaler(enCache, enCache); return; } catch(e2){ console.error(e2); }
+      }
+      message("<b>Le registre ne peut pas s'ouvrir</b> : le lecteur a rencontré une erreur (" + String(e && e.message || e).replace(/</g, "&lt;") + ").");
+    }
+  }
+  demarrer();
+})();
+</script>
+</body></html>
